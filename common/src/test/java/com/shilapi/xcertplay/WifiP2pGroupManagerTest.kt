@@ -417,10 +417,14 @@ class WifiP2pGroupManagerTest {
         context.getSystemService(WifiManager::class.java).isWifiEnabled = false
         if (com.shilapi.xcertplay.host.BuildConfig.IS_ZEEKR) {
             // The Zeekr head unit reports Wi-Fi as off while its radio is up, so the group
-            // creation is attempted and the framework decides the outcome.
+            // creation is attempted instead of being refused for the reported state.
+            var rejected = false
             WifiP2pGroupManager(context).use { manager ->
-                failure { manager.start(3000) }
+                try { manager.start(3000) } catch (failure: Exception) {
+                    rejected = failure.message?.contains("Turn on Wi-Fi") == true
+                }
             }
+            assertFalse("the reported Wi-Fi state must not refuse the group", rejected)
         } else {
             WifiP2pGroupManager(context).use { manager ->
                 assertTrue(failure { manager.start(3000) }.message!!.contains("Turn on Wi-Fi"))
