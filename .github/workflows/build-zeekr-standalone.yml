@@ -1,0 +1,58 @@
+name: Build ZeePlay Zeekr (with CarPlay auth)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-zeekr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Rebuild runtime auth assets from Secrets. Never commit these files to the repo.
+      - name: Restore CarPlay auth assets from Secrets
+        env:
+          IDENTITY_B64: ${{ secrets.IDENTITY_PK8_B64 }}
+          CERT_B64: ${{ secrets.CERTIFICATE_P7B_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${IDENTITY_B64:-}" ] || [ -z "${CERT_B64:-}" ]; then
+            echo "::error::Missing Secrets IDENTITY_PK8_B64 / CERTIFICATE_P7B_B64"
+            exit 1
+          fi
+          ASSETS_DIR="${RUNNER_TEMP}/diplay-runtime-assets"
+          mkdir -p "${ASSETS_DIR}/offline-mfi"
+          printf '%s' "${IDENTITY_B64}" | base64 -d > "${ASSETS_DIR}/offline-mfi/identity.pk8"
+          printf '%s' "${CERT_B64}" | base64 -d > "${ASSETS_DIR}/offline-mfi/certificate.p7b"
+          test -s "${ASSETS_DIR}/offline-mfi/identity.pk8"
+          test -s "${ASSETS_DIR}/offline-mfi/certificate.p7b"
+          echo "DIPLAY_AUTH_ASSETS_DIR=${ASSETS_DIR}" >> "${GITHUB_ENV}"
+          echo "Auth assets restored."
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Zeekr standalone debug APK (with auth)
+        run: bash scripts/build-zeekr.sh
+
+      - name: Upload ZeePlay APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeePlay-standalone-debug
+          path: mobile/build/outputs/zeekr/ZeePlay-standalone-debug.apk
+          if-no-files-found: error
+          retention-days: 30
