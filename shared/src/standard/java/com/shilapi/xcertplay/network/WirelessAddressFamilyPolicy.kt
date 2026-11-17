@@ -7,4 +7,10 @@ internal object WirelessAddressFamilyPolicy {
 
     /** Upstream publishes the IPv4 endpoint whenever the hotspot interface offers one. */
     const val PREFER_IPV4 = false
+
+    /** Upstream treats a disabled Wi-Fi radio as a hard stop for Wi-Fi Direct. */
+    const val TRUST_WIFI_ENABLED_FLAG = true
+
+    /** Upstream does not fall back to the car hotspot when Wi-Fi Direct cannot start. */
+    const val CAR_HOTSPOT_FALLBACK = false
 }

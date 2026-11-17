@@ -764,7 +764,14 @@ class WifiP2pGroupManager(
         if (!granted) throw IOException(if (Build.VERSION.SDK_INT >= 33)
             "Allow Nearby devices for DiPlay in the head unit's app permissions"
             else "Allow precise Location for DiPlay in the head unit's app permissions")
-        if (wifiEnabled == false) throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
+        if (wifiEnabled == false) {
+            if (WirelessAddressFamilyPolicy.TRUST_WIFI_ENABLED_FLAG) {
+                throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
+            }
+            // The head unit can report Wi-Fi as off while its radio is up and the car hotspot
+            // is running, so the flag is recorded and the group creation decides the outcome.
+            diagnostic("Wi-Fi P2P preflight reports Wi-Fi off; attempting the group anyway")
+        }
         // Location mode is diagnostic only: AOSP createGroup does not require it to be on.
         // Do not block firmware where Wi-Fi Direct works with Location services disabled.
         return !(wifiEnabled == true && fiveGhzSupported == false)

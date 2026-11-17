@@ -2594,11 +2594,78 @@ class CarPlayController(
                     appContext, com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext))) {
                 debugLog("car hotspot: Android still reports it off and no hotspot came up; the off warning is back")
             }
+            // The Zeekr head unit can refuse Wi-Fi Direct while its car hotspot works, so a
+            // failed direct attempt falls back to the car hotspot instead of ending the
+            // connection attempt.
+            val fallback = carHotspotFallback(generation, hotspotMode, failure)
+            if (fallback != null) return fallback
             throw IOException(
                 "Could not establish ${hotspotMode.name} hotspot: " +
                     (failure.message ?: failure.javaClass.simpleName),
                 failure,
             )
+        }
+    }
+
+    /**
+     * Retries the wireless attempt on the car hotspot after Wi-Fi Direct could not start.
+     *
+     * The car hotspot is the mode the head unit's own service supports, so it is the usable
+     * fallback when the direct group cannot be created. The fallback is attempted once per
+     * connection attempt and never for a mode the driver did not choose.
+     */
+    private fun carHotspotFallback(
+        generation: Int,
+        failedMode: WirelessHotspotMode,
+        failure: Throwable,
+    ): WirelessHotspotInfo? {
+        if (!WirelessAddressFamilyPolicy.CAR_HOTSPOT_FALLBACK) return null
+        if (failedMode != WirelessHotspotMode.WIFI_P2P) return null
+        if (isStaleWirelessRun(generation)) return null
+        debugLog("wireless Wi-Fi Direct could not start (${failure.message ?: failure.javaClass.simpleName}); " +
+            "falling back to the car hotspot")
+        val carState = com.shilapi.xcertplay.network.CarHotspotStatus.isEnabled(appContext)
+        if (carState == false) {
+            debugLog("wireless fallback to the car hotspot skipped: the hotspot is off")
+            return null
+        }
+        // The fallback needs the credentials the car itself saved for its hotspot.
+        val saved = com.shilapi.xcertplay.network.CarHotspotConfigRead.read(
+            context = appContext,
+            mayAsk = false,
+            log = { debugLog("wireless car hotspot fallback: $it") },
+        ).credentials
+        val ssid = saved?.ssid?.takeIf { it.isNotBlank() } ?: config.manualHotspotSsid
+        if (ssid.isNullOrBlank()) {
+            debugLog("wireless fallback to the car hotspot skipped: no hotspot name is known")
+            return null
+        }
+        val manager = ManualHotspotManager(
+            context = appContext,
+            ssid = ssid,
+            passphrase = saved?.passphrase ?: config.manualHotspotPassphrase.orEmpty(),
+            band = config.manualHotspotBand,
+            channel = config.manualHotspotChannel,
+            security = saved?.security ?: config.manualHotspotSecurity,
+            onDiagnostic = { debugLog("generation=$generation $it") },
+            isCancelled = { isStaleWirelessRun(generation) },
+            preferredInterface = config.manualHotspotInterface,
+        )
+        synchronized(wirelessResourceLock) {
+            if (isStaleWirelessRun(generation)) {
+                manager.close()
+                return null
+            }
+            hotspot = manager
+        }
+        return try {
+            manager.start(HOTSPOT_START_TIMEOUT_MILLIS)
+        } catch (fallbackFailure: Exception) {
+            if (hotspot === manager) hotspot = null
+            closeBestEffort("car hotspot fallback") { manager.close() }
+            debugLog("wireless fallback to the car hotspot also failed: " +
+                (fallbackFailure.message ?: fallbackFailure.javaClass.simpleName))
+            null
         }
     }
 

@@ -18,4 +18,21 @@ internal object WirelessAddressFamilyPolicy {
 
     /** Publishes IPv4 when the hotspot interface offers one. */
     const val PREFER_IPV4 = true
+
+    /**
+     * The Zeekr head unit runs its car hotspot through the Aptiv service, which leaves
+     * `WifiManager.isWifiEnabled` reporting `false` while the radio is in fact up and the
+     * hotspot is running. Treating that flag as a hard stop therefore rejects Wi-Fi Direct on
+     * a head unit whose radio is usable, so the Zeekr edition attempts the group instead and
+     * lets the framework answer whether the radio can serve it.
+     */
+    const val TRUST_WIFI_ENABLED_FLAG = false
+
+    /**
+     * Falls back to the car hotspot when Wi-Fi Direct cannot start.
+     *
+     * The head unit's own hotspot service is the mode the vehicle supports, so a direct
+     * attempt that the firmware refuses should still reach CarPlay over the car hotspot.
+     */
+    const val CAR_HOTSPOT_FALLBACK = true
 }

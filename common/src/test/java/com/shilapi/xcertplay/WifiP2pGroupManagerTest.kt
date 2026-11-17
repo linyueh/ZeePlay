@@ -415,11 +415,19 @@ class WifiP2pGroupManagerTest {
 
     @Test fun disabledWifiHasAnActionableErrorWithoutCreatingAnything() {
         context.getSystemService(WifiManager::class.java).isWifiEnabled = false
-        WifiP2pGroupManager(context).use { manager ->
-            assertTrue(failure { manager.start(3000) }.message!!.contains("Turn on Wi-Fi"))
+        if (com.shilapi.xcertplay.host.BuildConfig.IS_ZEEKR) {
+            // The Zeekr head unit reports Wi-Fi as off while its radio is up, so the group
+            // creation is attempted and the framework decides the outcome.
+            WifiP2pGroupManager(context).use { manager ->
+                failure { manager.start(3000) }
+            }
+        } else {
+            WifiP2pGroupManager(context).use { manager ->
+                assertTrue(failure { manager.start(3000) }.message!!.contains("Turn on Wi-Fi"))
+            }
+            assertTrue(radio.requests.isEmpty())
+            assertEquals(0, radio.removals)
         }
-        assertTrue(radio.requests.isEmpty())
-        assertEquals(0, radio.removals)
     }
 
     private fun failure(block: () -> Any): Throwable {
