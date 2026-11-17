@@ -41,6 +41,17 @@ internal object HotspotAddressPolicy {
         return select(addresses)
     }
 
+    /**
+     * True when the list carries an IPv4 address that can carry the CarPlay transport.
+     *
+     * A JmDNS instance joins only its own address family's multicast group, so an IPv6-only
+     * publication leaves the receiver unable to observe the iPhone's CarPlay control service
+     * when the hotspot does not forward IPv6 link-local multicast. A hotspot interface that
+     * exposes an IPv4 address is therefore used to publish the endpoint.
+     */
+    fun hasUsableIpv4(addresses: List<InetAddress>): Boolean =
+        addresses.any { it is Inet4Address && usable(it) }
+
     fun alternateFamilyCandidate(addresses: List<InetAddress>, published: InetAddress): InetAddress? {
         val publishedIsIpv6 = published is Inet6Address
         var linkLocal: InetAddress? = null

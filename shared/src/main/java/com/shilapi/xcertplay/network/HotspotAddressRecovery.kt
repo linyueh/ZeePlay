@@ -24,16 +24,34 @@ internal class HotspotAddressRecovery(
         if (preferredFamily == HotspotAddressPolicy.FAMILY_IPV6 && !candidates.any(::scopedLinkLocal)) {
             log("wireless address waiting preference=IPv6 timeoutMs=$timeoutMillis")
         }
+        // A soft hotspot hands the interface its IPv4 address after the group is reported
+        // ready. Without this wait the first snapshot can hold only link-local IPv6 and the
+        // receiver then publishes an IPv6 endpoint, which the hotspot may not multicast.
+        if (WirelessAddressFamilyPolicy.WAIT_FOR_IPV4 &&
+            preferredFamily != HotspotAddressPolicy.FAMILY_IPV6 &&
+            !HotspotAddressPolicy.hasUsableIpv4(candidates)
+        ) {
+            log("wireless address waiting preference=IPv4 timeoutMs=$timeoutMillis")
+        }
         while (true) {
             checkActive()
-            if (preferredFamily != HotspotAddressPolicy.FAMILY_IPV6) return candidates
-            if (candidates.any(::scopedLinkLocal)) {
-                log("wireless address preference=IPv6 ready elapsedMs=${nowMillis() - started}")
-                return candidates.filter { it !is Inet6Address || !it.isLinkLocalAddress || scopedLinkLocal(it) }
+            if (preferredFamily == HotspotAddressPolicy.FAMILY_IPV6) {
+                if (candidates.any(::scopedLinkLocal)) {
+                    log("wireless address preference=IPv6 ready elapsedMs=${nowMillis() - started}")
+                    return candidates.filter { it !is Inet6Address || !it.isLinkLocalAddress || scopedLinkLocal(it) }
+                }
+            } else if (!WirelessAddressFamilyPolicy.WAIT_FOR_IPV4) {
+                return candidates
+            } else {
+                if (HotspotAddressPolicy.hasUsableIpv4(candidates)) {
+                    log("wireless address preference=IPv4 ready elapsedMs=${nowMillis() - started}")
+                    return candidates
+                }
             }
             val remaining = deadline - nowMillis()
             if (remaining <= 0) {
-                log("wireless address preference=IPv6 unavailable elapsedMs=${nowMillis() - started}; using available family")
+                log("wireless address preference=${preferredFamily ?: "default"} unavailable " +
+                    "elapsedMs=${nowMillis() - started}; using available family")
                 return candidates
             }
             pause(minOf(WirelessStartupPolicy.INTERFACE_POLL_MILLIS, remaining))

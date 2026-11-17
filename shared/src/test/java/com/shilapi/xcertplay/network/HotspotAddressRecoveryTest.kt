@@ -52,8 +52,18 @@ class HotspotAddressRecoveryTest {
         for (preference in listOf(null, HotspotAddressPolicy.FAMILY_IPV4)) {
             assertEquals(live, recovery().awaitCandidates(live, preference))
         }
+        // The snapshot already carries an IPv4 address, so neither edition polls for one.
         assertEquals(0L, now)
         assertEquals(0, polls)
+    }
+
+    @Test fun ipv4PreferenceWaitsForTheHotspotIpv4AddressWhenTheEditionRequiresIt() {
+        if (!WirelessAddressFamilyPolicy.WAIT_FOR_IPV4) return
+        live = listOf(ipv6)
+        val next = recovery(afterPause = { if (now >= 500) live = listOf(ipv6, ipv4) })
+        val candidates = next.awaitCandidates(live, HotspotAddressPolicy.FAMILY_IPV4)
+        assertEquals(500L, now)
+        assertEquals(ipv4, HotspotAddressPolicy.select(candidates, HotspotAddressPolicy.FAMILY_IPV4))
     }
 
     @Test fun missingPreferredIpv6HasABoundedWaitAndKeepsTheIpv4Fallback() {

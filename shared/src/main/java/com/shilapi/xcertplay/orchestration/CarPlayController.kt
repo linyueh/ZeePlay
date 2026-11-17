@@ -53,6 +53,7 @@ import com.shilapi.xcertplay.network.HotspotAddressPolicy
 import com.shilapi.xcertplay.network.HotspotAddressRecovery
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
 import com.shilapi.xcertplay.network.WifiScanPause
+import com.shilapi.xcertplay.network.WirelessAddressFamilyPolicy
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotBackend
 import com.shilapi.xcertplay.network.WirelessHotspotManager
@@ -1355,10 +1356,17 @@ class CarPlayController(
             wirelessConnectionProof.begin(generation) {
                 if (!isStaleWirelessRun(generation)) startedHotspot?.onCarPlayConfirmed()
             }
-            val preferredFamily = HotspotAddressPolicy.parseFamily(
-                appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
-                    .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null),
-            )
+            // The Zeekr edition publishes IPv4 whenever the hotspot interface offers one, so a
+            // saved IPv6 preference from an earlier failed attempt must not select the family
+            // the head unit's hotspot does not multicast.
+            val preferredFamily = if (WirelessAddressFamilyPolicy.PREFER_IPV4) {
+                HotspotAddressPolicy.FAMILY_IPV4
+            } else {
+                HotspotAddressPolicy.parseFamily(
+                    appContext.getSharedPreferences(WIRELESS_PREFS, Context.MODE_PRIVATE)
+                        .getString(HOTSPOT_FAMILY_PREFERENCE_KEY, null),
+                )
+            }
             val addressRecovery = HotspotAddressRecovery(
                 sample = { hotspotCandidates(hotspotInfo, fallbackToSnapshot = false) },
                 cancelled = { isStaleWirelessRun(generation) },
@@ -2907,10 +2915,16 @@ class CarPlayController(
     private fun flipWirelessAddressFamily(generation: Int) = synchronized(wirelessResourceLock) {
         if (isStaleWirelessRun(generation)) return@synchronized
         val published = wirelessPublishedAddress
-        val next = published?.let { wirelessAddressRecovery?.nextFamily(it) }
         val from = published?.let {
             if (it is Inet6Address) HotspotAddressPolicy.FAMILY_IPV6 else HotspotAddressPolicy.FAMILY_IPV4
         }
+        // The Zeekr edition pins IPv4, so a timeout must not store an IPv6 preference that
+        // would select the family the head unit's hotspot does not multicast.
+        if (WirelessAddressFamilyPolicy.PREFER_IPV4) {
+            debugLog("wireless address family flip skipped published=${from ?: "none"}; IPv4 is pinned")
+            return@synchronized
+        }
+        val next = published?.let { wirelessAddressRecovery?.nextFamily(it) }
         if (isStaleWirelessRun(generation)) return@synchronized
         if (next == null || from == null) {
             debugLog(
